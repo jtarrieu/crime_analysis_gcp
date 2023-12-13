@@ -3,6 +3,7 @@ from datetime import datetime
 import io
 from zipfile import ZipFile
 from google.cloud import storage
+from google.cloud import pubsub_v1
 from pyspark.sql import SparkSession
 from pyspark.sql.dataframe import DataFrame
 from pyspark.sql import functions as F
@@ -69,7 +70,6 @@ def unzip_files(bucket_name, file_name):
         else:
             print(f"Neither file '{file_name}' nor zip file '{zip_file}' found. Running target function...")
 
-
 def pull_gcs_csv_to_df(bucket:str, file_name:str)->DataFrame:
     print('Building spark session ...')
     spark = SparkSession.builder.appName("CrimeDataAnalysis").getOrCreate()
@@ -92,14 +92,14 @@ def load_df_to_gcs_parquet(df:DataFrame, bucket:str, name:str)->None:
 def get_current_year()->int:
     return datetime.now().year
 
-def add_3y(df:DataFrame)->DataFrame:
+def add_3y(df: DataFrame) -> DataFrame:
     # Format the date and add 3 years to all the dates
-    df = df.withColumn("Date", F.expr("date_add(to_date(Date, 'MM/dd/yyyy HH:mm:ss'), 3 * 365)"))
-    # Update/Create the Year, Month and Hour
+    df = df.withColumn("Date", F.expr("date_add(to_timestamp(Date, 'MM/dd/yyyy hh:mm:ss a'), 3 * 365)"))
+    # Update/Create the Year, Month, and Hour
     df = df.withColumn("Year", F.year("Date"))
     df = df.withColumn("Month", F.month("Date"))
     df = df.withColumn("Hour", F.hour("Date"))
-    
+
     return df
 
 def total_crimes_past_5y_per_month(df:DataFrame)->DataFrame:
@@ -152,7 +152,7 @@ def safest_locations_4pm_to_10pm(df:DataFrame)->DataFrame:
     ranked_locations = location_counts.orderBy("count").filter((F.col("count") == 1))
 
     name = 'safest_locations_4pm_to_10pm'
-    
+
     return ranked_locations, name
 
 def types_of_crimes_most_arrested_2016_to_2019(df:DataFrame)->DataFrame:
@@ -169,15 +169,29 @@ def types_of_crimes_most_arrested_2016_to_2019(df:DataFrame)->DataFrame:
 
     return ranked_crimes, name
 
+def task_finished(project_id:str, topic_name:str, message:str):
+    print(f"Creating a publisher client with topic '{topic_name}'.")
+    publisher = pubsub_v1.PublisherClient()
+    topic_path = publisher.topic_path(project_id, topic_name)
+    message_data = message
+
+    future = publisher.publish(topic_path, data=message_data.encode("utf-8"))
+    future.result()
+    print(f"Message '{message}'sent to topic '{topic_name}'.")
+
+    return True
+
 def main():
     print('Starting processign job.')
     DATA_BUCKET_NAME, DATA_FILE_NAME = get_config()
+    PROJECT_ID = 'tarrieu'
+    TOPIC_NAME = "processing_job_ended"
 
     unzip_files(DATA_BUCKET_NAME, DATA_FILE_NAME)
 
     df_raw = pull_gcs_csv_to_df(DATA_BUCKET_NAME, DATA_FILE_NAME)
     df_0 = add_3y(df_raw)
-    
+
     processing_function_list = [
         total_crimes_past_5y_per_month,
         top_10_theft_crimes_location_past_3y,
@@ -193,6 +207,8 @@ def main():
         print('Computing ended.')
         load_df_to_gcs_csv(df, DATA_BUCKET_NAME, name)
         print(f'Ended job n°{index}.')
-    
+
+    task_finished(PROJECT_ID, TOPIC_NAME, 'job_finished')
+
 if __name__ == '__main__':
     main()

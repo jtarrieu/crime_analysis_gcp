@@ -1,10 +1,6 @@
 from os import getenv
-import io
 from google.cloud import dataproc_v1 as dataproc
-from google.cloud import storage
-from zipfile import ZipFile
-import re
-import logging
+import base64
 
 def get_config()->tuple:
     config = {
@@ -16,6 +12,7 @@ def get_config()->tuple:
         'data_bucket_name': getenv('DATA_BUCKET_NAME'),
         'data_zip_file_name': getenv('DATA_ZIP_FILE_NAME'),
         'data_file_name': getenv('DATA_FILE_NAME'),
+        'job_ended_topic_name': 'processing_job_ended'
     }
     print(config)
     return config
@@ -41,23 +38,23 @@ def get_cluster_config(config:dict) -> dict:
         "project_id": project_id,
         "cluster_name": cluster_name,
         "config": {
+            "software_config": {"image_version": "2.1.33-debian11"},
             "master_config": {
                 "num_instances": 1,
-                "machine_type_uri": "n2-standard-2",
+                "machine_type_uri": "n1-standard-4",
                 "disk_config": {
-                    "boot_disk_size_gb": 30
+                    "boot_disk_size_gb": 40
                 }
             },
             "worker_config": {
                 "num_instances": 2,
-                "machine_type_uri": "n2-standard-2",
+                "machine_type_uri": "n1-standard-4",
                 "disk_config": {
-                    "boot_disk_size_gb":30
+                    "boot_disk_size_gb":40
                 }
             }
         },
     }
-
 
     print(f'Creating cluster configuration: {cluster_config}.')
     return cluster_config
@@ -167,7 +164,7 @@ def submit_job_to_cluster(job_client, config:dict):
         print(f"Failed to submit the job. Error: {e}")
         return False
 
-def main(request):
+def extract_and_transform_with_dataproc(request):
 
     config         = get_config()
     cluster_client = create_cluster_client(config)
@@ -177,6 +174,10 @@ def main(request):
     # unzip_data(config)
     submit_job_to_cluster(job_client, config)
     # delete_dataproc_cluster(cluster_client, config)
-        
-    return 'processing ended'
 
+    return 'Extract transform ended'
+
+def load_to_bigquery(event, context):
+    pubsub_message = base64.b64decode(event['data']).decode('utf-8')
+    print(pubsub_message)
+    return pubsub_message

@@ -1,0 +1,18 @@
+# Service account key
+service_acount_key.json
+
+# data directory
+data/*
+
+# tmp
+tmp/*
+
+# terraform files
+.terraform.lock.hcl
+terraform.tfstate.backup
+.terraform/
+
+# git directory
+.git/*
+tmp/functions.zip
+tmp/data.zip

@@ -53,7 +53,11 @@ module "iam" {
   gcp_project = var.gcp_project
   gcp_region = var.gcp_region
 
-  function = module.functions.function
+  function = module.functions.extrac_transform_function_name
 
   permission_function = var.permission_function
+}
+
+resource "google_pubsub_topic" "pubsub_topic_job_ended" {
+  name = "processing_job_ended"
 }
