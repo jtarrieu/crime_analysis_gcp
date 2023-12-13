@@ -1,2 +1,2 @@
 google-cloud-dataproc
-google-cloud-storage
+google-cloud-bigquery

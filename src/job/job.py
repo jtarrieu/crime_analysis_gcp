@@ -169,6 +169,19 @@ def types_of_crimes_most_arrested_2016_to_2019(df:DataFrame)->DataFrame:
 
     return ranked_crimes, name
 
+def get_col_name_and_types(df:DataFrame)->tuple:
+    # Get column data types
+    column_types = df.dtypes
+    # Separate column names and types into lists
+    column_names = [col_name for col_name, _ in column_types]
+    column_types = [col_type for _, col_type in column_types]
+
+    # Print column names and types
+    print("Column Names:", column_names)
+    print("Column Types:", column_types)
+    
+    return column_names, column_types
+
 def task_finished(project_id:str, topic_name:str, message:str):
     print(f"Creating a publisher client with topic '{topic_name}'.")
     publisher = pubsub_v1.PublisherClient()
@@ -199,16 +212,25 @@ def main():
         safest_locations_4pm_to_10pm,
         types_of_crimes_most_arrested_2016_to_2019
     ]
+    
+    names = {'tables': []}
 
     for index, func in enumerate(processing_function_list, start=1):
         print(f'Starting job n°{index}.')
         print('Computing ...')
         df, name = func(df_0)
+        column_names, column_types = get_col_name_and_types(df)
+        table_dict = {'table_name': name,
+                      'columns': {
+                          'names': column_names,
+                          'types': column_types
+                          }} 
+        names['tables'].append(table_dict)
         print('Computing ended.')
         load_df_to_gcs_csv(df, DATA_BUCKET_NAME, name)
         print(f'Ended job n°{index}.')
 
-    task_finished(PROJECT_ID, TOPIC_NAME, 'job_finished')
+    task_finished(PROJECT_ID, TOPIC_NAME, str(names))
 
 if __name__ == '__main__':
     main()

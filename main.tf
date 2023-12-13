@@ -61,3 +61,8 @@ module "iam" {
 resource "google_pubsub_topic" "pubsub_topic_job_ended" {
   name = "processing_job_ended"
 }
+
+resource "google_bigquery_dataset" "my_dataset" {
+  dataset_id = "crimes"
+  project    = var.gcp_project
+}

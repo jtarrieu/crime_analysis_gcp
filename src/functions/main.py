@@ -1,6 +1,8 @@
 from os import getenv
 from google.cloud import dataproc_v1 as dataproc
+from google.cloud import bigquery
 import base64
+import ast
 
 def get_config()->tuple:
     config = {
@@ -12,7 +14,8 @@ def get_config()->tuple:
         'data_bucket_name': getenv('DATA_BUCKET_NAME'),
         'data_zip_file_name': getenv('DATA_ZIP_FILE_NAME'),
         'data_file_name': getenv('DATA_FILE_NAME'),
-        'job_ended_topic_name': 'processing_job_ended'
+        'job_ended_topic_name': 'processing_job_ended',
+        'ET_function_name': 'extract_and_transform'
     }
     print(config)
     return config
@@ -157,12 +160,35 @@ def submit_job_to_cluster(job_client, config:dict):
         )
 
         job_id = operation.reference.job_id
-
+        # the job id to the config
+        config['job_id'] = job_id
         print(f'Submitted job ID "{job_id}" to cluster "{cluster_name}".')
         return True
     except Exception as e:
         print(f"Failed to submit the job. Error: {e}")
         return False
+
+def get_cloud_function_logs_link(config:dict)->str:
+        region     = config['region']
+        project_id = config['project_id']
+        ET_function_name = config['ET_function_name']
+        url = f'https://console.cloud.google.com/functions/details/{region}/{ET_function_name}?env=gen1&hl=fr&project={project_id}&tab=logs'
+        html = f'<a href="{url}">function logs</a>' 
+        return html
+
+def get_job_logs_link(config:dict):
+    region     = config['region']
+    project_id = config['project_id']
+    cluster_name = config['cluster_name']
+
+    if config['job_id']:
+        job_id = config['job_id']
+        url = f'https://console.cloud.google.com/dataproc/jobs/{job_id}/monitoring?region={region}&hl=fr&project={project_id}'
+        html = f'<a href="{url}">job logs</a>' 
+        return html
+    url = f'https://console.cloud.google.com/dataproc/clusters/{cluster_name}/jobs?region={region}&hl=fr&project={project_id}'
+    html = f'<a href="{url}">cluster jobs</a>'
+    return url
 
 def extract_and_transform_with_dataproc(request):
 
@@ -170,14 +196,54 @@ def extract_and_transform_with_dataproc(request):
     cluster_client = create_cluster_client(config)
     job_client     = create_job_client(config)
 
-    create_dataproc_cluster(cluster_client, config)
-    # unzip_data(config)
-    submit_job_to_cluster(job_client, config)
-    # delete_dataproc_cluster(cluster_client, config)
+    if create_dataproc_cluster(cluster_client, config) is False:
+        return 
 
-    return 'Extract transform ended'
+    submit_job_to_cluster(job_client, config)
+
+    return f'''See the function's logs here: {get_cloud_function_logs_link(config)}
+    \nSee the job's logs here : {get_job_logs_link(config)}'''
+
+
+def create_bigquery_tables(project_id, dataset_name, json_config):
+    # Initialize the BigQuery client
+    client = bigquery.Client(project=project_id)
+
+    # Define the dataset reference
+    dataset_ref = client.dataset(dataset_name)
+
+    # Create the dataset if it doesn't exist
+    dataset = bigquery.Dataset(dataset_ref)
+    try:
+        client.create_dataset(dataset)
+        print(f"Dataset '{dataset_name}' created.")
+    except Exception as e:
+        print(f"Error creating dataset: {e}")
+
+    # Iterate through the tables in the JSON configuration
+    for table_config in json_config['tables']:
+        table_name = table_config['table_name']
+        columns = [{'name': col_name, 'type': col_type} for col_name, col_type in zip(table_config['columns']['names'], table_config['columns']['types'])]
+
+        # Define the table reference
+        table_ref = dataset_ref.table(table_name)
+
+        # Create the table
+        schema = [bigquery.SchemaField(name=col['name'], field_type=col['type']) for col in columns]
+        table = bigquery.Table(table_ref, schema=schema)
+
+        try:
+            client.create_table(table)
+            print(f"Table '{table_name}' created with schema: {schema}")
+        except Exception as e:
+            print(f"Error creating table: {e}")
 
 def load_to_bigquery(event, context):
     pubsub_message = base64.b64decode(event['data']).decode('utf-8')
-    print(pubsub_message)
+    content = ast.literal_eval(pubsub_message)
+    print(f'Received : {content}')
+
+    create_bigquery_tables('tarrieu', 'crimes', content)
+
     return pubsub_message
+
