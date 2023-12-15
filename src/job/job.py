@@ -9,7 +9,13 @@ from pyspark.sql.dataframe import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+# Configuration
 def get_config()->tuple:
+    """Return the arguments of the script.
+
+    Returns:
+        tuple: arguments: DATA_BUCKET_NAME, DATA_FILE_NAME, PROJECT_ID, TOPIC_NAME
+    """
     if len(sys.argv) != 5:
         print("Error: missing arguments\nUsage: python script_name.py \
             <DATA_BUCKET_NAME> <DATA_FILE_NAME> <PROJECT_ID> <TOPIC_NAME>")
@@ -25,8 +31,18 @@ def get_config()->tuple:
     print(f"Topic name: {TOPIC_NAME}")
     return DATA_BUCKET_NAME, DATA_FILE_NAME, PROJECT_ID, TOPIC_NAME
 
-def unzip_files(bucket_name, file_name):
+# Utils
+def unzip_files(bucket_name:str, file_name:str)->str:
+    """Check if the data.csv is in the data bucket, if so returns its path.
+    If not, check if data.csv.zip file is in the bucket, if so, unzip it and return its path.
 
+    Args:
+        bucket_name (str): data bucket name
+        file_name (str): data file name
+    
+    Return:
+        str: datafile path
+    """
     # Initialize a Google Cloud Storage client
     client = storage.Client()
 
@@ -72,26 +88,67 @@ def unzip_files(bucket_name, file_name):
         else:
             print(f"Neither file '{file_name}' nor zip file '{zip_file}' found. Running target function...")
 
-def pull_gcs_csv_to_df(bucket:str, file_name:str)->DataFrame:
+def build_spark_session(app_name:str)->SparkSession:
+    """Build a spark session.
+
+    Args:
+        app_name (str): session name
+
+    Returns:
+        SparkSession: the spark session object.
+    """
     print('Building spark session ...')
     spark = SparkSession.builder.appName("CrimeDataAnalysis").getOrCreate()
     print('Spark session built.')
-    gcs_input_path = f'gs://{bucket}/{file_name}'
-    print(f'Downloading {gcs_input_path}')
-    return spark.read.csv(gcs_input_path, header=True, inferSchema=True)
+    return spark
 
-def load_df_to_gcs_csv(df:DataFrame, bucket:str, name:str)->None:
-    print(f"Uploading csv result of '{name}' processing into gs://{bucket}/{name}'.")
-    output_gcs_path = f'gs://{bucket}/{name}'
-    df.coalesce(1).write.csv(output_gcs_path, mode="overwrite", header=True)
+def get_object_uri(bucket_name:str, file_path:str)->str:
+    """Create a GCS file uri.
+
+    Args:
+        bucket_name (str): bucket name
+        file_path (str): file path
+
+    Returns:
+        str: file uri 
+    """
+    return f"gs://{bucket_name}/{file_path}"
+
+def pull_gcs_csv_to_df(file_uri:str, spark_session:SparkSession)->DataFrame:
+    """Download a csv file from GCS and load it in a spark dataframe.
+
+    Args:
+        file_uri (str): file bucket uri
+
+    Returns:
+        DataFrame: data loaded into the dataframe
+    """
+    print(f'Downloading {file_uri}')
+    return spark_session.read.csv(file_uri, header=True, inferSchema=True)
+
+def load_df_to_gcs_csv(df:DataFrame, file_uri:str)->None:
+    """Upload a dataframe to a csv file in GCS bucket.
+
+    Args:
+        df (DataFrame): spark DataFrame
+        file_uri (str): csv file uri
+    """
+    print(f"Uploading csv file into {file_uri}.")
+    df.coalesce(1).write.csv(file_uri, mode="overwrite", header=True)
     print('File uploaded.')
 
-def load_df_to_gcs_parquet(df:DataFrame, bucket:str, name:str)->None:
-    print(f"Uploading result of '{name}' processing into gs://{bucket}/{name}.")
-    output_gcs_path = f'gs://{bucket}/{name}'
-    df.write.parquet(output_gcs_path, mode="overwrite")
+def load_df_to_gcs_parquet(df:DataFrame, file_uri:str)->None:
+    """Upload a dataframe to a parquet file in GCS bucket.
+
+    Args:
+        df (DataFrame): spark DataFrame
+        file_uri (str): parquet file uri
+    """
+    print(f"Uploading parquet into {file_uri}.")
+    df.write.parquet(file_uri, mode="overwrite")
     print('File uploaded.')
 
+# PySpark Processing
 def get_current_year()->int:
     return datetime.now().year
 
@@ -188,6 +245,7 @@ def get_col_name_and_types(df:DataFrame)->tuple:
     
     return column_names, column_types
 
+# End of Processing
 def task_finished(project_id:str, topic_name:str, message:str):
     print(f"Creating a publisher client with topic '{topic_name}'.")
     publisher = pubsub_v1.PublisherClient()
@@ -206,7 +264,10 @@ def main():
 
     unzip_files(DATA_BUCKET_NAME, DATA_FILE_NAME)
 
-    df_raw = pull_gcs_csv_to_df(DATA_BUCKET_NAME, DATA_FILE_NAME)
+    spark_session = build_spark_session('CrimesAnalysis')
+    csv_data_uri = get_object_uri(DATA_BUCKET_NAME, DATA_FILE_NAME)
+
+    df_raw = pull_gcs_csv_to_df(csv_data_uri, spark_session)
     df_0 = add_3y(df_raw)
 
     processing_function_list = [
@@ -225,6 +286,7 @@ def main():
     try:
         for index, func in enumerate(processing_function_list, start=1):
             print(f'Starting job n°{index}/{processing_count}.')
+            
             print('Computing ...')
             df, name = func(df_0)
             column_names, column_types = get_col_name_and_types(df)
@@ -235,7 +297,10 @@ def main():
                             }}
             output_message['tables'].append(table_dict)
             print('Computing ended.')
-            load_df_to_gcs_parquet(df, DATA_BUCKET_NAME, name)
+
+            file_uri = get_object_uri(DATA_BUCKET_NAME, name)
+            load_df_to_gcs_parquet(df, file_uri)
+            
             print(f'Ended job n°{index}.')
         output_message['status'] = 'SUCCESS'
     except Exception as e:

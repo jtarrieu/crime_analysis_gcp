@@ -497,12 +497,14 @@ def load(event, context)->str:
     # tables info
     tables = response['tables']
 
-
+    # If return of Job is succes, load to big query
     if response['status'] == 'SUCCESS':
         load_to_bigquery(bucket_client, bigquery_client, tables, config)
         delete_dataproc_cluster(cluster_client, config)
         print('Loading ended successfully.')
-
+        return ""
+    print('Job failed.')
+    delete_dataproc_cluster(cluster_client, config)
     return ""
 
 def start_processing_pipeline(request)->None:
