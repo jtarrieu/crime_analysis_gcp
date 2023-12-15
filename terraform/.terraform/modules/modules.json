@@ -1,1 +1,0 @@
-{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"bigquery","Source":"./bigquery","Dir":"bigquery"},{"Key":"functions","Source":"./functions","Dir":"functions"},{"Key":"iam","Source":"./iam","Dir":"iam"},{"Key":"pubsub","Source":"./pubsub","Dir":"pubsub"},{"Key":"storage","Source":"./storage","Dir":"storage"}]}
