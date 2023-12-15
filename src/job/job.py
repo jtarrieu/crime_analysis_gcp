@@ -10,14 +10,20 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 def get_config()->tuple:
-    if len(sys.argv) != 3:
-        print("Error: missing arguments\nUsage: python script_name.py <DATA_BUCKET_NAME> <DATA_FILE_NAME>")
+    if len(sys.argv) != 5:
+        print("Error: missing arguments\nUsage: python script_name.py \
+            <DATA_BUCKET_NAME> <DATA_FILE_NAME> <PROJECT_ID> <TOPIC_NAME>")
         sys.exit(1)
     DATA_BUCKET_NAME = sys.argv[1]
-    DATA_FILE_NAME   = sys.argv[2]    
+    DATA_FILE_NAME   = sys.argv[2]
+    PROJECT_ID       = sys.argv[3]
+    TOPIC_NAME       = sys.argv[4]
+
     print(f"Data bucket name: {DATA_BUCKET_NAME}")
     print(f"Data file name:   {DATA_FILE_NAME}")
-    return DATA_BUCKET_NAME, DATA_FILE_NAME
+    print(f"Project id: {PROJECT_ID}")
+    print(f"Topic name: {TOPIC_NAME}")
+    return DATA_BUCKET_NAME, DATA_FILE_NAME, PROJECT_ID, TOPIC_NAME
 
 def unzip_files(bucket_name, file_name):
 
@@ -63,10 +69,6 @@ def unzip_files(bucket_name, file_name):
 
                 print(f"Unzipped file '{unzipped_file_name}' uploaded to the bucket.")
 
-                # delete the zip file
-                zip_blob.delete()
-
-                print(f"Deleting zip file '{zip_file}'")
         else:
             print(f"Neither file '{file_name}' nor zip file '{zip_file}' found. Running target function...")
 
@@ -87,7 +89,8 @@ def load_df_to_gcs_csv(df:DataFrame, bucket:str, name:str)->None:
 def load_df_to_gcs_parquet(df:DataFrame, bucket:str, name:str)->None:
     print(f"Uploading result of '{name}' processing into gs://{bucket}/{name}.")
     output_gcs_path = f'gs://{bucket}/{name}'
-    df.repartition(1).write.parquet(output_gcs_path, mode="overwrite")
+    df.write.parquet(output_gcs_path, mode="overwrite")
+    print('File uploaded.')
 
 def get_current_year()->int:
     return datetime.now().year
@@ -150,10 +153,13 @@ def safest_locations_4pm_to_10pm(df:DataFrame)->DataFrame:
 
     # Rank locations based on the count in ascending order
     ranked_locations = location_counts.orderBy("count").filter((F.col("count") == 1))
+    
+    # Drop the 'count' column
+    ranked_locations_without_count = ranked_locations.drop("count")
 
     name = 'safest_locations_4pm_to_10pm'
 
-    return ranked_locations, name
+    return ranked_locations_without_count, name
 
 def types_of_crimes_most_arrested_2016_to_2019(df:DataFrame)->DataFrame:
     # Filter data for the time range between 2016 and 2019 and where arrests occurred
@@ -196,9 +202,7 @@ def task_finished(project_id:str, topic_name:str, message:str):
 
 def main():
     print('Starting processign job.')
-    DATA_BUCKET_NAME, DATA_FILE_NAME = get_config()
-    PROJECT_ID = 'tarrieu'
-    TOPIC_NAME = "processing_job_ended"
+    DATA_BUCKET_NAME, DATA_FILE_NAME, PROJECT_ID, TOPIC_NAME = get_config()
 
     unzip_files(DATA_BUCKET_NAME, DATA_FILE_NAME)
 
@@ -213,24 +217,31 @@ def main():
         types_of_crimes_most_arrested_2016_to_2019
     ]
     
-    names = {'tables': []}
+    processing_count = len(processing_function_list)
 
-    for index, func in enumerate(processing_function_list, start=1):
-        print(f'Starting job n°{index}.')
-        print('Computing ...')
-        df, name = func(df_0)
-        column_names, column_types = get_col_name_and_types(df)
-        table_dict = {'table_name': name,
-                      'columns': {
-                          'names': column_names,
-                          'types': column_types
-                          }} 
-        names['tables'].append(table_dict)
-        print('Computing ended.')
-        load_df_to_gcs_csv(df, DATA_BUCKET_NAME, name)
-        print(f'Ended job n°{index}.')
-
-    task_finished(PROJECT_ID, TOPIC_NAME, str(names))
+    print(f'Starting processing: {processing_count} jobs:')    
+    output_message = {'status':"",
+                      'tables': []}
+    try:
+        for index, func in enumerate(processing_function_list, start=1):
+            print(f'Starting job n°{index}/{processing_count}.')
+            print('Computing ...')
+            df, name = func(df_0)
+            column_names, column_types = get_col_name_and_types(df)
+            table_dict = {'table_name': name,
+                        'columns': {
+                            'names': column_names,
+                            'types': column_types
+                            }}
+            output_message['tables'].append(table_dict)
+            print('Computing ended.')
+            load_df_to_gcs_parquet(df, DATA_BUCKET_NAME, name)
+            print(f'Ended job n°{index}.')
+        output_message['status'] = 'SUCCESS'
+    except Exception as e:
+        print(f'Processing failed: {e}')
+        output_message['status'] = 'FAILED'
+    task_finished(PROJECT_ID, TOPIC_NAME, str(output_message))
 
 if __name__ == '__main__':
     main()

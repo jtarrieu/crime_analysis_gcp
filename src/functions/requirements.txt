@@ -1,2 +1,4 @@
 google-cloud-dataproc
 google-cloud-bigquery
+google-cloud-storage
+google-cloud-pubsub

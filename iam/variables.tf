@@ -5,9 +5,12 @@ variable "gcp_project" {
 variable "gcp_region" {
   type = string
 }
+variable "service_account_email" {
+  type = string
+}
 
 # FUNCTIONS
-variable "function" {
+variable "function_name" {
   type = string
 }
 
@@ -15,3 +18,4 @@ variable "function" {
 variable "permission_function" {
   type = string  
 }
+
