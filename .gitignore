@@ -9,7 +9,7 @@ tmp/*
 
 # terraform files
 .terraform.lock.hcl
-terraform/.terraform/
+terraform/.terraform/*
 terraform/terraform.tfstate.backup
 terraform/terraform.tfstate
 
