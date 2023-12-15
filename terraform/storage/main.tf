@@ -9,12 +9,7 @@ resource "google_storage_bucket" "data_bucket" {
     location = var.gcp_region
     force_destroy = true
 }
-# Generates an archive of the source code compressed as a .zip file.
-# data "archive_file" "data_source" {
-#     type        = "zip"
-#     source_dir  = var.data_source_dir
-#     output_path = var.data_output_path
-# }
+
 # Add source code zip to the Cloud Function's bucket
 resource "google_storage_bucket_object" "data_zip" {
     source       = var.data_output_path
