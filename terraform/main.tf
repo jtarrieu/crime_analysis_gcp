@@ -31,7 +31,7 @@ module "storage" {
   pubsub_topic_extract_transform_name = var.pubsub_topic_extract_transform_name
   pubsub_topic_load_name = var.pubsub_topic_load_name
 }
- 
+
 # Functions
 module "functions" {
   source = "./functions"
@@ -81,6 +81,7 @@ module "pubsub" {
 
   pubsub_topic_start_pipeline_name = var.pubsub_topic_extract_transform_name
   pubsub_topic_job_ended_name = var.pubsub_topic_load_name
+  gcp_project = var.gcp_project
 }
 
 # Big Query

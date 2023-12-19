@@ -39,7 +39,7 @@ def unzip_files(bucket_name:str, file_name:str)->str:
     Args:
         bucket_name (str): data bucket name
         file_name (str): data file name
-    
+
     Return:
         str: datafile path
     """
@@ -277,7 +277,7 @@ def main():
         safest_locations_4pm_to_10pm,
         types_of_crimes_most_arrested_2016_to_2019
     ]
-    
+
     processing_count = len(processing_function_list)
 
     print(f'Starting processing: {processing_count} jobs:')    

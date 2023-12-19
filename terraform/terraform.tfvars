@@ -1,8 +1,8 @@
 # Provider
 gcp_svc_key_path = "../service_acount_key.json"
-gcp_project = "tarrieu"
+gcp_project = "jerem-est-pauvre"
 gcp_region = "europe-west2"
-service_account_email = "compte-service-tarrieu@tarrieu.iam.gserviceaccount.com"
+service_account_email = "terraform@jerem-est-pauvre.iam.gserviceaccount.com"
 
 # Functions
 functions_runtime = "python38"
