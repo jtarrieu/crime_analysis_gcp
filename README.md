@@ -40,6 +40,7 @@ Almost nothing is hardcoded in the project, you can find all the variable in the
 # Run the pipeline
 ```bash
 cd terraform
+terraform init
 terraform apply # enter yes
 ```
 - click the output link
